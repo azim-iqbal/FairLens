@@ -66,7 +66,7 @@ Return ONLY JSON:
 """
 
         response = client.chat.completions.create(
-            model="llama3-70b-8192",
+            model="llama3-8b-8192",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2
         )
@@ -96,7 +96,7 @@ Explain in 2-3 simple sentences if this indicates bias.
 """
 
         response = client.chat.completions.create(
-            model="llama3-70b-8192",
+            model="llama3-8b-8192",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3
         )
@@ -135,7 +135,7 @@ Return JSON:
 """
 
         response = client.chat.completions.create(
-            model="llama3-70b-8192",
+            model="llama3-8b-8192",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3
         )
@@ -170,7 +170,7 @@ Return JSON:
 """
 
         response = client.chat.completions.create(
-            model="llama3-70b-8192",
+            model="llama3-8b-8192",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3
         )

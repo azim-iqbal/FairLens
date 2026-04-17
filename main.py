@@ -60,6 +60,6 @@ def api_root():
     return {"message": "FairLens API running"}
 
 from fastapi.responses import FileResponse
-@app.get("/")
-def serve_home():
-    return FileResponse("frontend/upload.html")
+@app.get("/results")
+def get_results():
+    return FileResponse("frontend/results.html")

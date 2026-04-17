@@ -2,8 +2,11 @@ from google import genai
 import os
 import json
 
-
-def get_gemini_findings(columns: list, samples: dict):
+from typing import List, Dict, Any
+def get_gemini_findings(
+    columns: List[str],
+    samples: List[Dict[str, Any]]
+):
     api_key = os.environ.get("GEMINI_API_KEY")
 
     if not api_key:

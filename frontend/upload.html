@@ -107,9 +107,13 @@
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                        file_id: currentFileId,
-                        filepath: currentFilePath
-                    })
+                    file_id: currentFileId,
+                    filename: "temp",
+                    filepath: currentFilePath,
+                    sensitive_columns: [],
+                    outcome_column: "placeholder",
+                    favorable_value: "placeholder"
+})
                 });
 
                 if (!res.ok) {
@@ -182,7 +186,7 @@
 
             localStorage.setItem('privilegedGroups', JSON.stringify(privGroups));
 
-            window.location.href = "/results";
+            window.location.href = "/results.html";
         });
     </script>
 </body>
