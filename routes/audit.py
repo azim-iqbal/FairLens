@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Body, HTTPException
 import json
 import os
-from services.metrics_service import run_metrics
+from services.metrics_service import calculate_fairness_metrics
 
 router = APIRouter()
 
@@ -16,8 +16,14 @@ async def run_audit(
 ):
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="Dataset not found")
-        
-    metrics = run_metrics(filepath, sensitive_columns, outcome_column, privileged_groups)
+
+    favorable_value = "Yes"  # or 1 depending on dataset    
+    metrics = calculate_fairness_metrics(
+    filepath,
+    sensitive_columns,
+    outcome_column,
+    favorable_value
+)
     
     # Save run for report
     with open(f"data/uploads/{file_id}_metrics.json", "w") as f:
