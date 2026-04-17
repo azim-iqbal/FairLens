@@ -1,45 +1,60 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
-from routes import upload, audit, fix, counterfactual, eu_mapper, report, history
-import os
 from dotenv import load_dotenv
+import os
 
+#  Load environment variables
 load_dotenv()
 
+#  Create required directories (prevents crash)
+os.makedirs("data/uploads", exist_ok=True)
+os.makedirs("data/reports", exist_ok=True)
+
+#  Initialize app
 app = FastAPI(title="FairLens API")
 
+#  CORS (useful for frontend requests)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # safe for hackathon
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-os.makedirs("data/uploads", exist_ok=True)
-os.makedirs("data/reports", exist_ok=True)
+#  Import routes AFTER app creation (avoids circular issues)
+from routes import (
+    upload,
+    audit,
+    counterfactual,
+    eu_mapper,
+    fix,
+    report,
+    history,
+)
 
-app.mount("/static", StaticFiles(directory="frontend"), name="static")
-templates = Jinja2Templates(directory="frontend")
+#  Register routes
+app.include_router(upload.router)
+app.include_router(audit.router)
+app.include_router(counterfactual.router)
+app.include_router(eu_mapper.router)
+app.include_router(fix.router)
+app.include_router(report.router)
+app.include_router(history.router)
 
-app.include_router(upload.router, prefix="/api/upload", tags=["Upload"])
-app.include_router(audit.router, prefix="/api/audit", tags=["Audit"])
-app.include_router(fix.router, prefix="/api/fix", tags=["Fix"])
-app.include_router(counterfactual.router, prefix="/api/counterfactual", tags=["Counterfactual"])
-app.include_router(eu_mapper.router, prefix="/api/eu-map", tags=["EU AI Act"])
-app.include_router(report.router, prefix="/api/report", tags=["Report"])
-app.include_router(history.router, prefix="/api/history", tags=["History"])
+#  Serve frontend safely
+if os.path.exists("frontend"):
+    app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
+else:
+    print("⚠ Frontend folder not found")
 
-@app.get("/")
-def index(request: Request):
-    return templates.TemplateResponse("upload.html", {"request": request})
+#  Health check (VERY useful for demo)
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
 
-@app.get("/results")
-def results(request: Request):
-    return templates.TemplateResponse("results.html", {"request": request})
-
-@app.get("/view-history")
-def get_history(request: Request):
-    return templates.TemplateResponse("history.html", {"request": request})
+#  Root fallback (optional safety)
+@app.get("/api")
+def api_root():
+    return {"message": "FairLens API running"}
