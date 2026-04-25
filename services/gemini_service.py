@@ -152,25 +152,52 @@ Return ONLY valid JSON in this exact shape:
 """
 
     try:
+        model_names = [
+            os.environ.get("GEMINI_MODEL", "").strip(),
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
+        ]
+        model_names = [name for name in model_names if name]
+
         try:
             import google.generativeai as genai
 
             genai.configure(api_key=api_key)
-            model = genai.GenerativeModel("gemini-1.5-flash")
-            response = model.generate_content(prompt)
-            text = getattr(response, "text", "")
+            text = ""
+            last_error = None
+            for model_name in model_names:
+                try:
+                    model = genai.GenerativeModel(model_name)
+                    response = model.generate_content(prompt)
+                    text = getattr(response, "text", "")
+                    if text:
+                        break
+                except Exception as exc:
+                    last_error = exc
+            if not text and last_error:
+                raise last_error
         except Exception:
             from google import genai
 
             client = genai.Client(api_key=api_key)
-            response = client.models.generate_content(
-                model="gemini-1.5-flash",
-                contents=prompt,
-            )
-            text = getattr(response, "text", "")
+            text = ""
+            last_error = None
+            for model_name in model_names:
+                try:
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=prompt,
+                    )
+                    text = getattr(response, "text", "")
+                    if text:
+                        break
+                except Exception as exc:
+                    last_error = exc
+            if not text and last_error:
+                raise last_error
 
         findings = _extract_json_list(text)
         return findings or fallback
     except Exception as exc:
-        print("Gemini scan fallback:", exc)
+        print("Gemini scan fallback used:", exc)
         return fallback

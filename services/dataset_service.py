@@ -17,7 +17,12 @@ def load_dataset(filepath: str) -> pd.DataFrame:
     ext = os.path.splitext(filepath)[1].lower()
 
     if ext in [".xlsx", ".xls"]:
-        return pd.read_excel(filepath)
+        try:
+            return pd.read_excel(filepath)
+        except ImportError as exc:
+            raise ImportError(
+                "Excel upload requires openpyxl. Run: .\\.venv\\Scripts\\python.exe -m pip install openpyxl"
+            ) from exc
 
     return pd.read_csv(filepath)
 

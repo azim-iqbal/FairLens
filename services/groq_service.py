@@ -48,14 +48,30 @@ def _chat_json(prompt: str, fallback: Any) -> Any:
     if client is None:
         return fallback
 
+    model_names = [
+        os.environ.get("GROQ_MODEL", "").strip(),
+        "llama-3.1-8b-instant",
+        "llama-3.3-70b-versatile",
+        "llama3-8b-8192",
+    ]
+    model_names = [name for name in model_names if name]
+
     try:
-        response = client.chat.completions.create(
-            model="llama3-8b-8192",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-        )
-        text = response.choices[0].message.content
-        return _parse_json(text, fallback)
+        last_error = None
+        for model_name in model_names:
+            try:
+                response = client.chat.completions.create(
+                    model=model_name,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.2,
+                )
+                text = response.choices[0].message.content
+                return _parse_json(text, fallback)
+            except Exception as exc:
+                last_error = exc
+        if last_error:
+            raise last_error
+        return fallback
     except Exception as exc:
         print("Groq fallback:", exc)
         return fallback
@@ -113,13 +129,29 @@ def analyze_counterfactual(flip_rate: float, severity: str) -> str:
     if client is None:
         return fallback
 
+    model_names = [
+        os.environ.get("GROQ_MODEL", "").strip(),
+        "llama-3.1-8b-instant",
+        "llama-3.3-70b-versatile",
+        "llama3-8b-8192",
+    ]
+    model_names = [name for name in model_names if name]
+
     try:
-        response = client.chat.completions.create(
-            model="llama3-8b-8192",
-            messages=[{"role": "user", "content": f"Explain in 2 simple sentences whether a {flip_rate:.2f}% counterfactual flip rate with {severity} severity indicates bias."}],
-            temperature=0.3,
-        )
-        return (response.choices[0].message.content or fallback).strip()
+        last_error = None
+        for model_name in model_names:
+            try:
+                response = client.chat.completions.create(
+                    model=model_name,
+                    messages=[{"role": "user", "content": f"Explain in 2 simple sentences whether a {flip_rate:.2f}% counterfactual flip rate with {severity} severity indicates bias."}],
+                    temperature=0.3,
+                )
+                return (response.choices[0].message.content or fallback).strip()
+            except Exception as exc:
+                last_error = exc
+        if last_error:
+            raise last_error
+        return fallback
     except Exception:
         return fallback
 
