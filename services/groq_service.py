@@ -143,7 +143,7 @@ def analyze_counterfactual(flip_rate: float, severity: str, sensitive_column: st
             try:
                 response = client.chat.completions.create(
                     model=model_name,
-                    messages=[{"role": "user", "content": f"Explain in 2 simple sentences whether a {flip_rate:.2f}% counterfactual flip rate with {severity} severity indicates bias."}],
+                    messages=[{"role": "user", "content": f"Explain in 2 simple sentences whether a {flip_rate:.2f}% counterfactual flip rate with {severity} severity for the '{sensitive_column}' attribute indicates bias in an AI decision system."}],
                     temperature=0.3,
                 )
                 return (response.choices[0].message.content or fallback).strip()
