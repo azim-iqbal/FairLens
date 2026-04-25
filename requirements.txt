@@ -6,7 +6,7 @@ scikit-learn
 reportlab
 python-dotenv
 python-multipart
-google-generativeai
+google-genai
 anthropic
 groq
 sqlalchemy

@@ -118,6 +118,45 @@ def _extract_json_list(text: str) -> list[dict[str, Any]]:
     return normalized
 
 
+def _normalize_model_name(model_name: str) -> str:
+    model_name = (model_name or "").strip()
+    if model_name.startswith("models/"):
+        return model_name.split("/", 1)[1]
+    return model_name
+
+
+def _candidate_model_names(client: Any) -> list[str]:
+    preferred = [
+        _normalize_model_name(os.environ.get("GEMINI_MODEL", "")),
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-001",
+    ]
+    preferred = [name for name in preferred if name]
+
+    discovered: list[str] = []
+    try:
+        for model in client.models.list():
+            name = _normalize_model_name(getattr(model, "name", ""))
+            if not name or "flash" not in name:
+                continue
+            supported_methods = getattr(model, "supported_actions", None) or getattr(
+                model, "supported_generation_methods", []
+            )
+            supported_text = " ".join(str(method).lower() for method in supported_methods)
+            if supported_text and "generate" not in supported_text:
+                continue
+            discovered.append(name)
+    except Exception:
+        discovered = []
+
+    model_names: list[str] = []
+    for name in preferred + discovered:
+        if name not in model_names:
+            model_names.append(name)
+    return model_names
+
+
 def get_gemini_findings(columns: list[str], samples: Any) -> list[dict[str, Any]]:
     profile = samples if isinstance(samples, dict) else {"samples": samples}
     fallback = _heuristic_findings(columns, profile)
@@ -152,49 +191,25 @@ Return ONLY valid JSON in this exact shape:
 """
 
     try:
-        model_names = [
-            os.environ.get("GEMINI_MODEL", "").strip(),
-            "gemini-2.0-flash",
-            "gemini-1.5-flash",
-        ]
-        model_names = [name for name in model_names if name]
+        from google import genai
 
-        try:
-            import google.generativeai as genai
-
-            genai.configure(api_key=api_key)
-            text = ""
-            last_error = None
-            for model_name in model_names:
-                try:
-                    model = genai.GenerativeModel(model_name)
-                    response = model.generate_content(prompt)
-                    text = getattr(response, "text", "")
-                    if text:
-                        break
-                except Exception as exc:
-                    last_error = exc
-            if not text and last_error:
-                raise last_error
-        except Exception:
-            from google import genai
-
-            client = genai.Client(api_key=api_key)
-            text = ""
-            last_error = None
-            for model_name in model_names:
-                try:
-                    response = client.models.generate_content(
-                        model=model_name,
-                        contents=prompt,
-                    )
-                    text = getattr(response, "text", "")
-                    if text:
-                        break
-                except Exception as exc:
-                    last_error = exc
-            if not text and last_error:
-                raise last_error
+        client = genai.Client(api_key=api_key)
+        model_names = _candidate_model_names(client)
+        text = ""
+        last_error = None
+        for model_name in model_names:
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                )
+                text = getattr(response, "text", "")
+                if text:
+                    break
+            except Exception as exc:
+                last_error = exc
+        if not text and last_error:
+            raise last_error
 
         findings = _extract_json_list(text)
         return findings or fallback
