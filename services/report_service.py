@@ -7,7 +7,6 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from services.dataset_service import REPORT_DIR, UPLOAD_DIR, ensure_data_dirs
-from services.groq_service import generate_report_sections
 
 
 def safe_load_json(path, default):
@@ -44,6 +43,71 @@ def _normalize_report_sections(sections: dict) -> dict:
     return normalized
 
 
+def _format_group_rates(rows: list[dict]) -> str:
+    return ", ".join(
+        f"{item.get('group')}: {item.get('percent')}% (n={item.get('total')})"
+        for item in rows or []
+    )
+
+
+def _build_report_sections(audit_results: dict) -> dict:
+    metrics = audit_results.get("metrics", {})
+    findings = audit_results.get("findings", [])
+    eu_clauses = audit_results.get("eu_clauses", [])
+    significance = metrics.get("significance_tests", {})
+    disparity = metrics.get("disparate_impact_ratio", {})
+    parity = metrics.get("demographic_parity", {})
+    continuous = metrics.get("continuous_associations", {})
+
+    flagged_names = [item.get("column") for item in findings if item.get("column")]
+    significant_findings = []
+
+    for column, test in significance.items():
+        if not test.get("significant"):
+            continue
+        if column in parity:
+            rates_text = _format_group_rates(parity.get(column, []))
+            significant_findings.append(
+                f"{column}: statistically significant difference detected ({test.get('test')}, p={test.get('p_value')}). Rates: {rates_text}."
+            )
+
+    for column, stats in continuous.items():
+        if stats.get("significant"):
+            significant_findings.append(
+                f"{column}: statistically significant continuous association detected (point-biserial r={stats.get('r')}, p={stats.get('p_value')}, n={stats.get('sample_size')})."
+            )
+
+    if significant_findings:
+        bias_findings = " ".join(significant_findings)
+    else:
+        audited_columns = ", ".join(disparity.keys() or continuous.keys()) or "selected protected columns"
+        bias_findings = f"No statistically significant bias detected across {audited_columns}."
+
+    if flagged_names:
+        executive = f"FairLens reviewed the uploaded dataset and flagged these columns after correlation testing: {', '.join(flagged_names)}."
+    else:
+        executive = "FairLens reviewed the uploaded dataset and did not find any statistically supported sensitive or proxy columns that warranted a fairness warning."
+
+    if eu_clauses:
+        legal = "Potential compliance risk remains because these EU-style audit indicators were triggered: " + "; ".join(
+            f"{item.get('clause')} ({item.get('title')})" for item in eu_clauses
+        ) + "."
+    else:
+        legal = "No EU AI Act-style risk indicators were triggered by the current statistical results."
+
+    if significant_findings:
+        actions = "Review the flagged columns, document the group-level evidence with sample sizes, and reassess the model before deployment."
+    else:
+        actions = "No statistically significant bias was detected. Keep monitoring future data, preserve documentation, and rerun the audit after material data changes."
+
+    return {
+        "Executive Summary": executive,
+        "Bias Findings": bias_findings,
+        "Legal Risk Assessment": legal,
+        "Recommended Actions": actions,
+    }
+
+
 def generate_report_data(file_id):
     metrics = safe_load_json(f"{UPLOAD_DIR}/{file_id}_metrics.json", {})
     fixed_metrics = safe_load_json(f"{UPLOAD_DIR}/{file_id}_fixed_metrics.json", {})
@@ -61,7 +125,7 @@ def generate_report_data(file_id):
         "eu_clauses": eu_data,
     }
 
-    sections = _normalize_report_sections(generate_report_sections(audit_results))
+    sections = _normalize_report_sections(_build_report_sections(audit_results))
 
     return {
         "filename": upload_meta.get("filename", "Uploaded dataset"),

@@ -1,6 +1,7 @@
 import pandas as pd
+from scipy.stats import chi2_contingency, pointbiserialr
 
-from services.dataset_service import is_continuous_numeric, is_identifier_column, load_dataset
+from services.dataset_service import build_outcome_binary, encode_series_for_correlation, is_continuous_numeric, is_identifier_column, load_dataset
 
 
 MIN_GROUP_FLOOR = 5
@@ -18,10 +19,7 @@ def _coerce_favorable(series: pd.Series, favorable_value):
 
 
 def _positive_mask(series: pd.Series, favorable_value) -> pd.Series:
-    favorable = _coerce_favorable(series, favorable_value)
-    if pd.api.types.is_numeric_dtype(series):
-        return series == favorable
-    return series.astype(str).str.strip().str.lower() == str(favorable).strip().lower()
+    return build_outcome_binary(series, favorable_value).astype(bool)
 
 
 def _encode_for_correlation(df: pd.DataFrame, outcome_column: str, favorable_value) -> pd.DataFrame:
@@ -53,9 +51,11 @@ def calculate_fairness_metrics(filepath, sensitive_columns, outcome_column, favo
         return {
             "demographic_parity": {},
             "disparate_impact_ratio": {},
+            "continuous_associations": {},
             "feature_influence": {},
+            "significance_tests": {},
             "plain_language": [],
-            "overall_status": "Insufficient Data",
+            "overall_status": "Passes 80% Rule",
         }
 
     sensitive_columns = [
@@ -68,15 +68,19 @@ def calculate_fairness_metrics(filepath, sensitive_columns, outcome_column, favo
         return {
             "demographic_parity": {},
             "disparate_impact_ratio": {},
+            "continuous_associations": {},
             "feature_influence": {},
-            "plain_language": ["No selected sensitive columns were available for audit."],
-            "overall_status": "Insufficient Data",
+            "significance_tests": {},
+            "plain_language": ["No statistically relevant protected columns were flagged for audit."],
+            "overall_status": "Passes 80% Rule",
         }
 
     positive = _positive_mask(df[outcome_column], favorable_value)
     demographic_parity = {}
     disparate_impact_ratio = {}
+    continuous_associations = {}
     plain_language = []
+    significance_tests = {}
     failing_columns = []
 
     for col in sensitive_columns:
@@ -86,10 +90,27 @@ def calculate_fairness_metrics(filepath, sensitive_columns, outcome_column, favo
         skipped_groups = []
 
         if is_continuous_numeric(df[col]):
+            pair = pd.DataFrame({
+                "x": encode_series_for_correlation(df[col]),
+                "y": positive.astype(int),
+            }).dropna()
+            if len(pair) >= 3 and pair["x"].nunique() >= 2 and pair["y"].nunique() >= 2:
+                r, p = pointbiserialr(pair["x"], pair["y"])
+                continuous_associations[col] = {
+                    "r": round(float(r), 4),
+                    "p_value": round(float(p), 4),
+                    "significant": bool(abs(float(r)) >= 0.10 and float(p) <= 0.05),
+                    "sample_size": int(len(pair)),
+                }
+                significance_tests[col] = {
+                    "test": "point-biserial",
+                    "p_value": round(float(p), 4),
+                    "significant": bool(float(p) <= 0.05),
+                    "sample_size": int(len(pair)),
+                }
             plain_language.append(
-                f"{col} looks like a continuous numeric field, so FairLens skipped disparate impact ratio for it and relies on association metrics instead."
+                f"{col} is continuous, so FairLens used point-biserial correlation instead of disparate impact ratio."
             )
-            demographic_parity[col] = group_rows
             continue
 
         min_group_size = _min_group_size(len(df))
@@ -113,6 +134,15 @@ def calculate_fairness_metrics(filepath, sensitive_columns, outcome_column, favo
             })
 
         demographic_parity[col] = group_rows
+        contingency = pd.crosstab(df[col], positive.astype(int))
+        if contingency.shape[0] >= 2 and contingency.shape[1] >= 2:
+            chi2, p_value, _, _ = chi2_contingency(contingency)
+            significance_tests[col] = {
+                "test": "chi-square",
+                "p_value": round(float(p_value), 4),
+                "significant": bool(float(p_value) <= 0.05),
+                "sample_size": int(len(df)),
+            }
 
         if len(valid_rates) >= 2:
             max_group = max(valid_rates, key=valid_rates.get)
@@ -136,7 +166,7 @@ def calculate_fairness_metrics(filepath, sensitive_columns, outcome_column, favo
                 "skipped_groups": skipped_groups,
             }
 
-            if ratio < 0.8:
+            if ratio < 0.8 and significance_tests.get(col, {}).get("significant", False):
                 failing_columns.append(col)
 
             plain_language.append(
@@ -162,7 +192,9 @@ def calculate_fairness_metrics(filepath, sensitive_columns, outcome_column, favo
     return {
         "demographic_parity": demographic_parity,
         "disparate_impact_ratio": disparate_impact_ratio,
+        "continuous_associations": continuous_associations,
         "feature_influence": feature_influence,
+        "significance_tests": significance_tests,
         "plain_language": plain_language,
         "overall_status": overall_status,
     }

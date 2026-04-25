@@ -52,7 +52,7 @@ async def upload_dataset(file: UploadFile = File(...)):
     favorable_value = infer_favorable_value(df, outcome_column)
     gemini_findings = get_gemini_findings(columns, profile)
     validated_findings = validate_findings_with_claude(columns, profile, gemini_findings)
-    final_findings = sanitize_findings(validated_findings, columns, outcome_column)
+    final_findings = sanitize_findings(validated_findings, columns, outcome_column, df, favorable_value)
     suggested_sensitive_columns = default_audit_columns(final_findings, df, outcome_column)
 
     meta = {

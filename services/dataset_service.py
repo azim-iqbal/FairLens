@@ -2,6 +2,7 @@ import os
 from typing import Any
 
 import pandas as pd
+from scipy.stats import pointbiserialr
 
 
 UPLOAD_DIR = "data/uploads"
@@ -94,6 +95,24 @@ def json_safe(value: Any) -> Any:
     return value
 
 
+def coerce_favorable_value(series: pd.Series, favorable_value):
+    if pd.api.types.is_numeric_dtype(series):
+        try:
+            if "." in str(favorable_value):
+                return float(favorable_value)
+            return int(favorable_value)
+        except Exception:
+            return favorable_value
+    return str(favorable_value)
+
+
+def build_outcome_binary(series: pd.Series, favorable_value) -> pd.Series:
+    favorable = coerce_favorable_value(series, favorable_value)
+    if pd.api.types.is_numeric_dtype(series):
+        return (series == favorable).astype(int)
+    return (series.astype(str).str.strip().str.lower() == str(favorable).strip().lower()).astype(int)
+
+
 def normalize_column_name(column: str) -> str:
     return str(column).strip().lower().replace(" ", "_")
 
@@ -133,7 +152,45 @@ def is_continuous_numeric(series: pd.Series) -> bool:
     return unique_count >= max(8, int(len(non_null) * 0.1))
 
 
-def sanitize_findings(findings: list[dict], columns: list[str], outcome_column: str) -> list[dict]:
+def encode_series_for_correlation(series: pd.Series) -> pd.Series:
+    if pd.api.types.is_numeric_dtype(series):
+        return pd.to_numeric(series, errors="coerce")
+
+    values = series.astype(str).replace({"nan": None})
+    codes, _ = pd.factorize(values, sort=True)
+    encoded = pd.Series(codes, index=series.index, dtype="float64")
+    encoded[encoded < 0] = pd.NA
+    return encoded
+
+
+def correlation_gate(df: pd.DataFrame, column: str, outcome_column: str, favorable_value) -> dict:
+    if column not in df.columns or outcome_column not in df.columns:
+        return {"r": 0.0, "p": 1.0, "passes": False, "n": 0}
+
+    encoded = encode_series_for_correlation(df[column])
+    outcome_binary = build_outcome_binary(df[outcome_column], favorable_value)
+    pair = pd.DataFrame({"x": encoded, "y": outcome_binary}).dropna()
+
+    if len(pair) < 3 or pair["x"].nunique() < 2 or pair["y"].nunique() < 2:
+        return {"r": 0.0, "p": 1.0, "passes": False, "n": int(len(pair))}
+
+    try:
+        r, p = pointbiserialr(pair["x"], pair["y"])
+    except Exception:
+        return {"r": 0.0, "p": 1.0, "passes": False, "n": int(len(pair))}
+
+    if pd.isna(r) or pd.isna(p):
+        return {"r": 0.0, "p": 1.0, "passes": False, "n": int(len(pair))}
+
+    return {
+        "r": float(r),
+        "p": float(p),
+        "passes": abs(float(r)) >= 0.10 and float(p) <= 0.05,
+        "n": int(len(pair)),
+    }
+
+
+def sanitize_findings(findings: list[dict], columns: list[str], outcome_column: str, df: pd.DataFrame, favorable_value) -> list[dict]:
     valid_columns = {str(col): col for col in columns}
     seen = set()
     cleaned = []
@@ -159,6 +216,10 @@ def sanitize_findings(findings: list[dict], columns: list[str], outcome_column: 
         if not finding_type:
             continue
 
+        stats = correlation_gate(df, column, outcome_column, favorable_value)
+        if not stats["passes"]:
+            continue
+
         key = (column, finding_type)
         if key in seen:
             continue
@@ -170,6 +231,9 @@ def sanitize_findings(findings: list[dict], columns: list[str], outcome_column: 
             "source": str(finding.get("source", "FairLens")),
             "confidence": str(finding.get("confidence", "Medium")),
             "recommended": finding_type == "sensitive",
+            "correlation_r": round(stats["r"], 4),
+            "correlation_p": round(stats["p"], 4),
+            "sample_size": stats["n"],
         })
 
     return cleaned
@@ -193,9 +257,6 @@ def default_audit_columns(findings: list[dict], df: pd.DataFrame, outcome_column
     for column in selected:
         if column not in df.columns:
             continue
-        if is_continuous_numeric(df[column]):
-            # Keep continuous protected fields visible in scan, but do not auto-audit them with DI.
-            continue
         filtered.append(column)
 
     return filtered
@@ -215,8 +276,6 @@ def filter_core_audit_columns(selected_columns: list[str], findings: list[dict],
         finding_type = str(finding.get("type", "")).lower()
 
         if finding_type != "sensitive":
-            continue
-        if is_continuous_numeric(df[column]):
             continue
 
         filtered.append(column)

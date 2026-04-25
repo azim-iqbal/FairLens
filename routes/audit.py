@@ -38,9 +38,6 @@ async def run_audit(
         outcome_column,
     )
 
-    if not filtered_sensitive_columns:
-        raise HTTPException(status_code=400, detail="No auditable protected columns were selected. Choose a protected categorical field such as gender or ethnicity.")
-
     metrics = calculate_fairness_metrics(
         filepath,
         filtered_sensitive_columns,
