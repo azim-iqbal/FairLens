@@ -116,7 +116,7 @@ def run_counterfactual_test(filepath, sensitive_column, outcome_column):
             "flip_rate": round(flip_rate, 2),
             "samples": samples,
             "severity": severity,
-            "interpretation": analyze_counterfactual(flip_rate, severity),
+            "interpretation": analyze_counterfactual(flip_rate, severity, sensitive_column),
         }
     except Exception as exc:
         print("Counterfactual error:", exc)
