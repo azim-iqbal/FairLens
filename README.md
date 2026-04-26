@@ -46,6 +46,31 @@ Open:
 http://127.0.0.1:8000
 ```
 
+## Deploy on Render
+
+This repository includes `render.yaml`, so Render can create the web service from the GitHub repo.
+
+1. Push the latest code to GitHub.
+2. In Render, choose **New +** then **Blueprint**.
+3. Connect the `umaircse007-cyber/Fairlens-` repository.
+4. Render will use:
+
+```text
+Build Command: pip install -r requirements.txt
+Start Command: uvicorn main:app --host 0.0.0.0 --port $PORT
+Health Check Path: /health
+```
+
+5. Add environment variables in Render:
+
+```env
+GEMINI_API_KEY=
+GROQ_API_KEY=
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+Do not commit real API keys. Add them only in the Render dashboard.
+
 ## Project Structure
 
 ```text
